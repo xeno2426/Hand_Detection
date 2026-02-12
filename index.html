@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Hand Detection Stable</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+
+<style>
+body{
+  margin:0;
+  background:black;
+  text-align:center;
+  color:white;
+  font-family:Arial;
+}
+
+canvas{
+  width:300px;
+  margin-top:15px;
+}
+
+#resultBox{
+  margin-top:20px;
+  font-size:28px;
+  color:cyan;
+  min-height:40px;
+}
+</style>
+</head>
+
+<body>
+
+<h2>Hand Detection</h2>
+
+<video id="video" autoplay playsinline width="256" height="256" style="display:none;"></video>
+<canvas id="canvas" width="256" height="256"></canvas>
+
+<div id="resultBox">Starting camera...</div>
+
+<script>
+
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const resultBox = document.getElementById("resultBox");
+
+let lastCount = -1;
+let stableFrames = 0;
+let detecting = false;
+
+// Start Camera
+async function startCamera(){
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { width:256, height:256, facingMode:"user" }
+  });
+  video.srcObject = stream;
+  await video.play();
+}
+
+const hands = new Hands({
+  locateFile: (file) =>
+    `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+});
+
+hands.setOptions({
+  maxNumHands:1,
+  modelComplexity:0,
+  minDetectionConfidence:0.6,
+  minTrackingConfidence:0.6
+});
+
+hands.onResults(results => {
+
+  ctx.clearRect(0,0,256,256);
+  ctx.drawImage(video,0,0,256,256);
+
+  if(results.multiHandLandmarks){
+
+    const lm = results.multiHandLandmarks[0];
+
+    let fingers=[];
+
+    // Thumb
+    fingers.push(lm[4].x < lm[3].x ? 1 : 0);
+
+    // Other fingers
+    const tips=[8,12,16,20];
+    const pips=[6,10,14,18];
+
+    for(let i=0;i<4;i++){
+      fingers.push(lm[tips[i]].y < lm[pips[i]].y ? 1 : 0);
+    }
+
+    const count=fingers.reduce((a,b)=>a+b,0);
+
+    if(count===lastCount){
+      stableFrames++;
+    } else {
+      stableFrames=0;
+    }
+
+    lastCount=count;
+
+    if(stableFrames>2){
+      resultBox.innerHTML="Fingers: "+count;
+    }
+
+    // Draw Skeleton
+    ctx.strokeStyle="lime";
+    ctx.lineWidth=2;
+
+    const connections=[
+      [0,1],[1,2],[2,3],[3,4],
+      [0,5],[5,6],[6,7],[7,8],
+      [5,9],[9,10],[10,11],[11,12],
+      [9,13],[13,14],[14,15],[15,16],
+      [13,17],[17,18],[18,19],[19,20],
+      [0,17]
+    ];
+
+    for(let [s,e] of connections){
+      ctx.beginPath();
+      ctx.moveTo(lm[s].x*256,lm[s].y*256);
+      ctx.lineTo(lm[e].x*256,lm[e].y*256);
+      ctx.stroke();
+    }
+
+  } else {
+    resultBox.innerHTML="Show your hand";
+  }
+
+  detecting=false;
+});
+
+// Safe Detection Loop
+function detectLoop(){
+  if(!detecting && video.readyState===4){
+    detecting=true;
+    hands.send({image:video});
+  }
+  requestAnimationFrame(detectLoop);
+}
+
+(async()=>{
+  await startCamera();
+  resultBox.innerHTML="Show your hand";
+  detectLoop();
+})();
+
+</script>
+
+</body>
+</html>
